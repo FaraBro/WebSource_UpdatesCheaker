@@ -12,6 +12,10 @@ DATA_DIR = Path(str(SCRIPT_DIR) + "/data")
 if not DATA_DIR.is_dir():
 	DATA_DIR.mkdir()
 
+LOGS_DIR = Path(str(DATA_DIR) + "/logs")
+if not LOGS_DIR.is_dir():
+	LOGS_DIR.mkdir()
+
 SETTINGS_PATH = Path(str(DATA_DIR) + "/settings.json5")
 LAST_UPDATE_DATA__PATH = Path(str(DATA_DIR) + "/.lastUpdData")
 
@@ -29,8 +33,10 @@ class data:
 		"enabled": false,
 		"token": "",
 		"chatId": 0,
-		"text": "New news!\nSee https://github.com/ for more information.",
+		"text": "",
 	},
+	
+	"log_level": 1,
 }"""
 			
 			with SETTINGS_PATH.open('w', encoding='utf-8') as settings_file:
@@ -76,8 +82,39 @@ class TelegramAPI:
 		url = f"https://api.telegram.org/bot{token}/sendMessage"
 		requests.post(url, data={'chat_id': chatId, 'text': text, "parse_mode": "Markdown"})
 
+class logger:
+	def __init__(self, log_level: int = 1, log_file_path: Path | str = "default"):
+		self.log_level = log_level
+		
+		if isinstance(log_file_path, str):
+			if log_file_path == "default":
+				log_file_path = Path(str(LOGS_DIR)+'/'+time.strftime("%Y-%m-%d", time.localtime()))
+			else:
+				log_file_path = Path(str(LOGS_DIR)+'/'+log_file_path)
+		
+		self.log_file_path = Path(log_file_path)
+	
+	log_levels = [
+		"DEBUG",
+		"INFO",
+		"WARNING",
+		"ERROR",
+	]
+	
+	def new(self, log_level: int = 0, text: str = "", save_to_file: bool = True):
+		if log_level >= self.log_level:
+			level_str = self.log_levels[log_level].upper()
+			log_txt = f"[{level_str}] {text}"
+			print(log_txt)
+			
+			if save_to_file:
+				with self.log_file_path.open('w', encoding='utf-8') as log_file:
+					log_file.write(log_txt + '\n')
+
 def main():
 	settings = data.get_settings()
+	
+	main_logger = logger(settings.get('log_level') if settings.get('log_level') else 1)
 	
 	def cycle(url):
 		response = requests.get(url, headers={})
@@ -92,20 +129,37 @@ def main():
 			elpased_time = time.time_ns() - lastUpdateData['time']
 			if elpased_time >= settings['updateTime']:
 				if cycle(settings['url']) != lastUpdateData['hash']:
-					print(f"Data has been update!\n\turl: {settings['url']}")
+					main_logger.new(1, f"Data has been update! URL: {settings['url']}")
 					
 					TGbot = settings.get('TGbot')
 					if TGbot:
 						if TGbot.get('enabled'):
+							success = False
 							try:
 								token = str(TGbot['token'])
 								chatId = int(TGbot['chatId'])
-								text = str(TGbot['text'])
-							except Exception:
-								print("[WARNING] Invalid Telegram bot settings")
-							TelegramAPI.sendMessage(token, chatId, text)
+								success = True
+							except IndexError:
+								main_logger.new(4, "Invalid Telegram bot settings.")
+							except Exception as e:
+								main_logger.new(4, f"An unknown error occurred while retrieving critical data to send a message to Telegram: {e}.")
+							
+							if success:
+								text = TGbot.get('text')
+								if not text:
+									text = f"New data!\nSee {settings['url']} for more information." # Default text
+								
+								TelegramAPI.sendMessage(token, chatId, text)
+							else:
+								main_logger.new(3, "The Telegram message wasn`t sent.")
+				else:
+					main_logger.new(1, "The data hasn`t been updated", False)
 			else:
-				time.sleep((settings['updateTime'] - elpased_time) // 1000000 + 1)
+				try:
+					time.sleep((settings['updateTime'] - elpased_time) // 1000000 + 1)
+				except KeyboardInterrupt:
+					main_logger.new(1, "The user caused the stop", False)
+					exit()
 		else:
 			cycle(settings['url'])
 
