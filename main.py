@@ -71,6 +71,7 @@ class data:
 			lastUpdateData_file.write(hash + time)
 
 class TelegramAPI:
+	@staticmethod
 	def sendMessage(token, chatId, text):
 		url = f"https://api.telegram.org/bot{token}/sendMessage"
 		requests.post(url, data={'chat_id': chatId, 'text': text, "parse_mode": "Markdown"})
