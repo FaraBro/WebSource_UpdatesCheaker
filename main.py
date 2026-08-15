@@ -27,15 +27,21 @@ class data:
 				settings = json5.parse(settings_file.read())[0]
 		else:
 			settings = r"""{
-	"url": "https://github.com/",
-	"updateTime": 43200000000,
+	"url": "https://github.com/", // Full link to the network resource
+	"updateTime": 43200, // How many times in seconds will the data be checked? default: 43200 (12 hours)
 	"TGbot": {
-		"enabled": false,
-		"token": "",
-		"chatId": 0,
-		"text": "",
+		"enabled": false, // Enable or disable sending messages in Telegram. The value must be true or false
+		"token": "", // Telegram bot token
+		"chatId": 0, // The ID of the chat the bot will send the message to. If you don't know the ID, enter your profile ID. You can enable ID display in Advanced Settings > Experimental Settings in the Telegram client. The value must be an integer
+		"text": "", // Text of the notification sent. If the value is not specified, the standard template will be used
 	},
 	
+	/* Logging levels
+	0: DEBUG
+	1: INFO
+	2: WARNING
+	3: ERROR
+	The value must be an integer */
 	"log_level": 1,
 }"""
 			
@@ -113,6 +119,7 @@ class logger:
 
 def main():
 	settings = data.get_settings()
+	settings['updateTime'] = settings['updateTime'] * 1000000
 	
 	main_logger = logger(settings.get('log_level') if settings.get('log_level') else 1)
 	
