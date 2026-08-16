@@ -35,6 +35,11 @@ class data:
 		"chatId": 0, // The ID of the chat the bot will send the message to. If you don't know the ID, enter your profile ID. You can enable ID display in Advanced Settings > Experimental Settings in the Telegram client. The value must be an integer
 		"text": "", // Text of the notification sent. If the value is not specified, the standard template will be used
 	},
+	"proxy": {
+		"enabled_for_TGBot": false, // Enable or disable proxy for Telegram messages. The value must be true or false
+		"enabled_for_webStorage": false, // Enable or disable proxy for web Storage (see param url). The value must be true or false
+		"url": "", // URL to proxy. Eg. "http://my_login:my_password@127.0.0.1:8080". For SOCKS proxy you must install dependencies
+	},
 	
 	/* Logging levels
 	0: DEBUG
@@ -84,9 +89,9 @@ class data:
 
 class TelegramAPI:
 	@staticmethod
-	def sendMessage(token, chatId, text):
+	def sendMessage(token, chatId, text, proxy: dict):
 		url = f"https://api.telegram.org/bot{token}/sendMessage"
-		requests.post(url, data={'chat_id': chatId, 'text': text, "parse_mode": "Markdown"})
+		requests.post(url, data={'chat_id': chatId, 'text': text, "parse_mode": "Markdown"}, proxies=proxy['url'] if proxy['enabled'] else None)
 
 class logger:
 	def __init__(self, log_level: int = 1, log_file_path: Path | str = "default"):
@@ -123,19 +128,44 @@ def main():
 	
 	main_logger = logger(settings.get('log_level') if settings.get('log_level') else 1)
 	
-	def cycle(url):
-		response = requests.get(url, headers={})
+	def cycle(url, proxy: dict):
+		response = requests.get(url, headers={}, proxies=proxy['url'] if proxy['enabled'] else None)
 		hashOfResponse = hashlib.sha3_256(response.content).digest()
 		
 		data.update_lastUpdateData(hashOfResponse, time.time_ns())
 		return hashOfResponse
+	
+	def parse_proxySettings(nameOfEnabledKey: str, proxySettings=settings['proxy'], loggerForFunc=main_logger):
+		if isinstance(proxySettings, dict):
+			proxy = {}
+			try:
+				proxy = {
+					"enabled": bool(proxySettings[nameOfEnabledKey]),
+					"url": {"http": str(proxySettings['url']), "https": str(proxySettings['url'])} if bool(proxySettings[nameOfEnabledKey]) else None
+				}
+			except IndexError:
+				loggerForFunc.new(3, "Invalid proxy settings: Missing keys.")
+				proxy = {"enabled": false, "url": None}
+			except ValueError:
+				loggerForFunc.new(3, "Invalid proxy settings: Invalid values ​​for keys")
+				proxy = {"enabled": false, "url": None}
+			except Exception as e:
+				loggerForFunc.new(3, f"An unknown error occurred while retrieving critical data to get proxy settings: {e}.")
+				proxy = {"enabled": false, "url": None}
+		else:
+			loggerForFunc.new(3, f"Invalid proxy settings: Proxy settings were expected to be a table..")
+			proxy = {"enabled": false, "url": None}
+			
+		return proxy
+	
+	print(f"Web Source Updates Cheaker\n{'='*26}\nLaunch time: {time.strftime("%x %X", time.localtime())}\n")
 	
 	while True:
 		lastUpdateData = data.get_lastUpdateData()
 		if lastUpdateData.get('success'):
 			elpased_time = time.time_ns() - lastUpdateData['time']
 			if elpased_time >= settings['updateTime']:
-				if cycle(settings['url']) != lastUpdateData['hash']:
+				if cycle(settings['url'], parse_proxySettings("enabled_for_webStorage")) != lastUpdateData['hash']:
 					main_logger.new(1, f"Data has been update! URL: {settings['url']}")
 					
 					TGbot = settings.get('TGbot')
@@ -147,16 +177,20 @@ def main():
 								chatId = int(TGbot['chatId'])
 								success = True
 							except IndexError:
-								main_logger.new(4, "Invalid Telegram bot settings.")
+								main_logger.new(4, "Invalid Telegram bot settings: Missing keys.")
+							except ValueError:
+								main_logger.new(4, "Invalid proxy settings: Invalid values ​​for keys")
 							except Exception as e:
 								main_logger.new(4, f"An unknown error occurred while retrieving critical data to send a message to Telegram: {e}.")
+							
+							proxy = parse_proxySettings("enabled_for_TGBot")
 							
 							if success:
 								text = TGbot.get('text')
 								if not text:
 									text = f"New data!\nSee {settings['url']} for more information." # Default text
 								
-								TelegramAPI.sendMessage(token, chatId, text)
+								TelegramAPI.sendMessage(token, chatId, text, proxy)
 							else:
 								main_logger.new(3, "The Telegram message wasn`t sent.")
 				else:
