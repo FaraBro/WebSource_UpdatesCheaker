@@ -91,7 +91,20 @@ class TelegramAPI:
 	@staticmethod
 	def sendMessage(token, chatId, text, proxy: dict):
 		url = f"https://api.telegram.org/bot{token}/sendMessage"
-		requests.post(url, data={'chat_id': chatId, 'text': text, "parse_mode": "Markdown"}, proxies=proxy['url'] if proxy['enabled'] else None)
+		for _ in range(3):
+			success = False
+			try:
+				success = requests.post(url, data={'chat_id': chatId, 'text': text, "parse_mode": "Markdown"}, proxies=proxy['url'] if proxy['enabled'] else None).ok
+				break
+			except requests.exceptions.Any:
+				loggerForFunc.new(4, "An error occurred while trying to send a Telegram message.")
+				success = False
+			except Exception as e:
+				loggerForFunc.new(4, f"An unknown error occurred while trying to send a Telegram message: {e}")
+				success = False
+				break
+		if not success:
+			raise Exception
 
 class logger:
 	def __init__(self, log_level: int = 1, log_file_path: Path | str = "default"):
@@ -124,16 +137,31 @@ class logger:
 
 def main():
 	settings = data.get_settings()
+	settings['updateTimeInSeconds'] = settings['updateTime']
 	settings['updateTime'] = settings['updateTime'] * 1000000
 	
 	main_logger = logger(settings.get('log_level') if settings.get('log_level') else 1)
 	
-	def cycle(url, proxy: dict = {"enabled": False, "url": None}):
-		response = requests.get(url, headers={}, proxies=proxy['url'] if proxy['enabled'] else None)
-		hashOfResponse = hashlib.sha3_256(response.content).digest()
+	def cycle(url, proxy: dict = {"enabled": False, "url": None}, loggerForFunc=main_logger):
+		for _ in range(3):
+			try:
+				response = requests.get(url, headers={}, proxies=proxy['url'] if proxy['enabled'] else None)
+				break
+			except requests.exceptions.Any:
+				loggerForFunc.new(4, "Data request error.")
+				response = None
+			except Exception as e:
+				loggerForFunc.new(4, f"An unknown error occurred while retrieving data from the network resource: {e}")
+				response = None
+				break
 		
-		data.update_lastUpdateData(hashOfResponse, time.time_ns())
-		return hashOfResponse
+		if response:
+			hashOfResponse = hashlib.sha3_256(response.content).digest()
+			
+			data.update_lastUpdateData(hashOfResponse, time.time_ns())
+			return hashOfResponse
+		else:
+			raise Exception
 	
 	def parse_proxySettings(nameOfEnabledKey: str, proxySettings=settings['proxy'], loggerForFunc=main_logger):
 		if isinstance(proxySettings, dict):
@@ -143,7 +171,7 @@ def main():
 					"enabled": bool(proxySettings[nameOfEnabledKey]),
 					"url": {"http": str(proxySettings['url']), "https": str(proxySettings['url'])} if bool(proxySettings[nameOfEnabledKey]) else None
 				}
-			except IndexError:
+			except KeyError:
 				loggerForFunc.new(3, "Invalid proxy settings: Missing keys.")
 				proxy = {"enabled": False, "url": None}
 			except ValueError:
@@ -158,43 +186,61 @@ def main():
 			
 		return proxy
 	
-	print(f"Web Source Updates Cheaker\n{'='*26}\nLaunch time: {time.strftime("%x %X", time.localtime())}\n")
+	print(f"""Web Source Updates Cheaker
+{'='*26}
+Launch time: {time.strftime("%x %X", time.localtime())}
+Data update time: Once every {settings['updateTimeInSeconds']} seconds
+Web Source: {settings['url']}
+Logging level: {main_logger.log_levels[main_logger.log_level].upper()}
+""")
 	
 	while True:
 		lastUpdateData = data.get_lastUpdateData()
 		if lastUpdateData.get('success'):
 			elpased_time = time.time_ns() - lastUpdateData['time']
 			if elpased_time >= settings['updateTime']:
-				if cycle(settings['url'], parse_proxySettings("enabled_for_webStorage")) != lastUpdateData['hash']:
-					main_logger.new(1, f"Data has been update! URL: {settings['url']}")
-					
-					TGbot = settings.get('TGbot')
-					if TGbot:
-						if TGbot.get('enabled'):
-							success = False
-							try:
-								token = str(TGbot['token'])
-								chatId = int(TGbot['chatId'])
-								success = True
-							except IndexError:
-								main_logger.new(4, "Invalid Telegram bot settings: Missing keys.")
-							except ValueError:
-								main_logger.new(4, "Invalid proxy settings: Invalid values ​​for keys")
-							except Exception as e:
-								main_logger.new(4, f"An unknown error occurred while retrieving critical data to send a message to Telegram: {e}.")
-							
-							proxy = parse_proxySettings("enabled_for_TGBot")
-							
-							if success:
-								text = TGbot.get('text')
-								if not text:
-									text = f"New data!\nSee {settings['url']} for more information." # Default text
+				success = False
+				try:
+					hash = cycle(settings['url'], parse_proxySettings("enabled_for_webStorage"))
+					success = True
+				except Exception:
+					main_logger.new(3, "An error occurred while retrieving the resource hash.")
+				if success:
+					if hash != lastUpdateData['hash']:
+						main_logger.new(1, f"Data has been update! URL: {settings['url']}")
+						
+						TGbot = settings.get('TGbot')
+						if TGbot:
+							if TGbot.get('enabled'):
+								success = False
+								try:
+									token = str(TGbot['token'])
+									chatId = int(TGbot['chatId'])
+									success = True
+								except KeyError:
+									main_logger.new(4, "Invalid Telegram bot settings: Missing keys.")
+								except ValueError:
+									main_logger.new(4, "Invalid Telegram bot settings: Invalid values ​​for keys")
+								except Exception as e:
+									main_logger.new(4, f"An unknown error occurred while retrieving critical data to send a message to Telegram: {e}.")
 								
-								TelegramAPI.sendMessage(token, chatId, text, proxy)
-							else:
-								main_logger.new(3, "The Telegram message wasn`t sent.")
+								proxy = parse_proxySettings("enabled_for_TGBot")
+								
+								if success:
+									text = TGbot.get('text')
+									if not text:
+										text = f"New data!\nSee {settings['url']} for more information." # Default text
+									
+									try:
+										TelegramAPI.sendMessage(token, chatId, text, proxy)
+									except Exception:
+										main_logger.new(3, "The Telegram message wasn`t sent.")
+								else:
+									main_logger.new(3, "The Telegram message wasn`t sent.")
+					else:
+						main_logger.new(1, "The data hasn`t been updated", False)
 				else:
-					main_logger.new(1, "The data hasn`t been updated", False)
+					main_logger.new(1, "The cycle has been skipped.")
 			else:
 				try:
 					time.sleep((settings['updateTime'] - elpased_time) // 1000000 + 1)
