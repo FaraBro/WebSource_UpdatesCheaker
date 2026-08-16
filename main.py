@@ -128,7 +128,7 @@ def main():
 	
 	main_logger = logger(settings.get('log_level') if settings.get('log_level') else 1)
 	
-	def cycle(url, proxy: dict):
+	def cycle(url, proxy: dict = {"enabled": False, "url": None}):
 		response = requests.get(url, headers={}, proxies=proxy['url'] if proxy['enabled'] else None)
 		hashOfResponse = hashlib.sha3_256(response.content).digest()
 		
@@ -145,16 +145,16 @@ def main():
 				}
 			except IndexError:
 				loggerForFunc.new(3, "Invalid proxy settings: Missing keys.")
-				proxy = {"enabled": false, "url": None}
+				proxy = {"enabled": False, "url": None}
 			except ValueError:
 				loggerForFunc.new(3, "Invalid proxy settings: Invalid values ​​for keys")
-				proxy = {"enabled": false, "url": None}
+				proxy = {"enabled": False, "url": None}
 			except Exception as e:
 				loggerForFunc.new(3, f"An unknown error occurred while retrieving critical data to get proxy settings: {e}.")
-				proxy = {"enabled": false, "url": None}
+				proxy = {"enabled": False, "url": None}
 		else:
 			loggerForFunc.new(3, f"Invalid proxy settings: Proxy settings were expected to be a table..")
-			proxy = {"enabled": false, "url": None}
+			proxy = {"enabled": False, "url": None}
 			
 		return proxy
 	
@@ -203,5 +203,6 @@ def main():
 					exit()
 		else:
 			cycle(settings['url'])
+			main_logger.new(1, "The data has been created")
 
 main()
