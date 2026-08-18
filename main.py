@@ -112,9 +112,13 @@ class logger:
 		
 		if isinstance(log_file_path, str):
 			if log_file_path == "default":
+				self.log_file_type = "default"
 				log_file_path = Path(str(LOGS_DIR)+'/'+time.strftime("%Y-%m-%d", time.localtime()))
 			else:
+				self.log_file_type = "custom"
 				log_file_path = Path(str(LOGS_DIR)+'/'+log_file_path)
+		else:
+			self.log_file_type = "custom"
 		
 		self.log_file_path = Path(log_file_path)
 	
@@ -125,15 +129,28 @@ class logger:
 		"ERROR",
 	]
 	
+	def __write_to_log(self, data: str):
+		with self.log_file_path.open('a', encoding='utf-8') as log_file:
+			log_file.write(data + '\n')
+		
+	
 	def new(self, log_level: int = 0, text: str = "", save_to_file: bool = True):
 		if log_level >= self.log_level:
 			level_str = self.log_levels[log_level].upper()
-			log_txt = f"[{level_str}] {text}"
+			log_txt = f"[{time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())}] [{level_str}] {text}"
 			print(log_txt)
 			
 			if save_to_file:
-				with self.log_file_path.open('w', encoding='utf-8') as log_file:
-					log_file.write(log_txt + '\n')
+				self.cheak_logFilePath()
+				self.__write_to_log(log_txt)
+	
+	def cheak_logFilePath(self):
+		if self.log_file_type == "default":
+			estimated_log_file_path = Path(str(LOGS_DIR)+'/'+time.strftime("%Y-%m-%d", time.localtime()))
+			if self.log_file_path != estimated_log_file_path:
+				if self.log_file_path.is_file():
+					self.__write_to_log("\nEnd of log")
+				self.log_file_path = estimated_log_file_path
 
 def main():
 	settings = data.get_settings()
@@ -148,10 +165,10 @@ def main():
 				response = requests.get(url, headers={}, proxies=proxy['url'] if proxy['enabled'] else None)
 				break
 			except requests.exceptions.Any:
-				loggerForFunc.new(4, "Data request error.")
+				loggerForFunc.new(3, "Data request error.")
 				response = None
 			except Exception as e:
-				loggerForFunc.new(4, f"An unknown error occurred while retrieving data from the network resource: {e}")
+				loggerForFunc.new(3, f"An unknown error occurred while retrieving data from the network resource: {e}")
 				response = None
 				break
 		
@@ -218,11 +235,11 @@ Logging level: {main_logger.log_levels[main_logger.log_level].upper()}
 									chatId = int(TGbot['chatId'])
 									success = True
 								except KeyError:
-									main_logger.new(4, "Invalid Telegram bot settings: Missing keys.")
+									main_logger.new(3, "Invalid Telegram bot settings: Missing keys.")
 								except ValueError:
-									main_logger.new(4, "Invalid Telegram bot settings: Invalid values ​​for keys")
+									main_logger.new(3, "Invalid Telegram bot settings: Invalid values ​​for keys")
 								except Exception as e:
-									main_logger.new(4, f"An unknown error occurred while retrieving critical data to send a message to Telegram: {e}.")
+									main_logger.new(3, f"An unknown error occurred while retrieving critical data to send a message to Telegram: {e}.")
 								
 								proxy = parse_proxySettings("enabled_for_TGBot")
 								
@@ -234,13 +251,14 @@ Logging level: {main_logger.log_levels[main_logger.log_level].upper()}
 									try:
 										TelegramAPI.sendMessage(token, chatId, text, proxy)
 									except Exception:
-										main_logger.new(3, "The Telegram message wasn`t sent.")
+										main_logger.new(2, "The Telegram message wasn`t sent.")
 								else:
-									main_logger.new(3, "The Telegram message wasn`t sent.")
+									main_logger.new(2, "The Telegram message wasn`t sent.")
 					else:
 						main_logger.new(1, "The data hasn`t been updated", False)
 				else:
-					main_logger.new(1, "The cycle has been skipped.")
+					data.update_lastUpdateData(lastUpdateData['hash'], time.time_ns())
+					main_logger.new(2, "The cycle has been skipped.")
 			else:
 				try:
 					time.sleep((settings['updateTime'] - elpased_time) // 1000000 + 1)
