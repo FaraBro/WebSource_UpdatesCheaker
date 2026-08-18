@@ -157,28 +157,44 @@ def main():
 	settings['updateTimeInSeconds'] = settings['updateTime']
 	settings['updateTime'] = settings['updateTime'] * 1000000
 	
-	main_logger = logger(settings.get('log_level') if settings.get('log_level') else 1)
+	main_logger = logger(settings['log_level'])
 	
 	def cycle(url, proxy: dict = {"enabled": False, "url": None}, loggerForFunc=main_logger):
+		success = False
 		for _ in range(3):
 			try:
 				response = requests.get(url, headers={}, proxies=proxy['url'] if proxy['enabled'] else None)
+				response.raise_for_status()
+				success = True
 				break
 			except requests.exceptions.Any:
 				loggerForFunc.new(3, "Data request error.")
-				response = None
+				time.sleep(5)
 			except Exception as e:
 				loggerForFunc.new(3, f"An unknown error occurred while retrieving data from the network resource: {e}")
 				response = None
 				break
 		
 		if response:
-			hashOfResponse = hashlib.sha3_256(response.content).digest()
+			content = response.content
+			if loggerForFunc.log_level == 0:
+				response_weight = len(content)
+				response_time = response.elapsed.total_seconds()
+				speed = response_weight / response_time
+				loggerForFunc.new(0, f"""Response Debug Data
+	Response weight: {response_weight} B
+	Response time: {response_time} sec
+	Connection speed: {speed} B*sec
+	Response code: {response.status_code} ({response.reason})
+""")
 			
-			data.update_lastUpdateData(hashOfResponse, time.time_ns())
-			return hashOfResponse
-		else:
-			raise Exception
+			if success:
+				hashOfResponse = hashlib.sha3_256(content).digest()
+				
+				data.update_lastUpdateData(hashOfResponse, time.time_ns())
+				return hashOfResponse
+			else:
+				raise Exception
 	
 	def parse_proxySettings(nameOfEnabledKey: str, proxySettings=settings['proxy'], loggerForFunc=main_logger):
 		if isinstance(proxySettings, dict):
