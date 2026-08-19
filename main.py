@@ -185,8 +185,7 @@ def main():
 	Response weight: {response_weight} B
 	Response time: {response_time} sec
 	Connection speed: {speed} B*sec
-	Response code: {response.status_code} ({response.reason})
-""")
+	Response code: {response.status_code} ({response.reason})""")
 			
 			if success:
 				hashOfResponse = hashlib.sha3_256(content).digest()
@@ -219,7 +218,7 @@ def main():
 			
 		return proxy
 	
-	print(f"""Web Source Updates Cheaker
+	print(f"""Web Source Updates Checker
 {'='*26}
 Launch time: {time.strftime("%x %X", time.localtime())}
 Data update time: Once every {settings['updateTimeInSeconds']} seconds
