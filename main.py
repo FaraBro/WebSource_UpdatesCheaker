@@ -2,6 +2,8 @@ from pathlib import Path
 import requests
 import time
 import hashlib
+import tarfile
+import io
 
 import json5
 
@@ -144,12 +146,32 @@ class logger:
 				self.cheak_logFilePath()
 				self.__write_to_log(log_txt)
 	
+	@staticmethod
+	def __get_file_size_and_source(file_path: Path | str):
+		with open(Path(file_path), 'rb') as file:
+			source = file.read()
+			size = len(source)
+		
+		return size, source
+	
+	def archivate_log(self):
+		log_size, log = self.__get_file_size_and_source(self.log_file_path)
+		last_name = self.log_file_path.name
+		new_path = Path(str(self.log_file_path) + " (Archived).tar.gz")
+		with tarfile.open(new_path, 'w:gz') as tar:
+			metaOfLog = tarfile.TarInfo(name=last_name)
+			metaOfLog.size = log_size
+			tar.addfile(tarinfo=metaOfLog, fileobj=io.BytesIO(log))
+		self.log_file_path.unlink()
+	
 	def cheak_logFilePath(self):
 		if self.log_file_type == "default":
 			estimated_log_file_path = Path(str(LOGS_DIR)+'/'+time.strftime("%Y-%m-%d", time.localtime()))
 			if self.log_file_path != estimated_log_file_path:
 				if self.log_file_path.is_file():
 					self.__write_to_log("\nEnd of log")
+					self.archivate_log()
+				
 				self.log_file_path = estimated_log_file_path
 
 def main():
