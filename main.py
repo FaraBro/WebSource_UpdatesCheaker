@@ -157,12 +157,22 @@ class logger:
 	def archivate_log(self):
 		log_size, log = self.__get_file_size_and_source(self.log_file_path)
 		last_name = self.log_file_path.name
-		new_path = Path(str(self.log_file_path) + " (Archived).tar.gz")
-		with tarfile.open(new_path, 'w:gz') as tar:
+		
+		archive = io.BytesIO()
+		with tarfile.open(fileobj=archive, mode='w:gz') as tar:
 			metaOfLog = tarfile.TarInfo(name=last_name)
 			metaOfLog.size = log_size
 			tar.addfile(tarinfo=metaOfLog, fileobj=io.BytesIO(log))
-		self.log_file_path.unlink()
+		
+		archive_bytes = archive.getvalue()
+		if len(archive_bytes) > log_size:
+			self.log_file_path.rename(str(self.log_file_path) + " (Archived)")
+		else:
+			new_path = Path(str(self.log_file_path) + " (Archived).tar.gz")
+			with open(new_path, 'wb') as archive_log_file:
+				archive_log_file.write(archive_bytes)
+			
+			self.log_file_path.unlink()
 	
 	def cheak_logFilePath(self):
 		if self.log_file_type == "default":
